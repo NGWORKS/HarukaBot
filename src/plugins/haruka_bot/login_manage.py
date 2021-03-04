@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 import base64
 import rsa,asyncio,json
 from .config import Config
+from .dynamic import Dynamic
  
 class BiliApi():
     """
@@ -23,6 +24,7 @@ class BiliApi():
             "https://passport.bilibili.com/api/oauth2/revoke",
             "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/dynamic_history",
             "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/dynamic_new",
+            "https://api.bilibili.com/x/relation/followings"
             ]
         self.default_headers = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)\
@@ -89,18 +91,34 @@ class BiliApi():
         typelist = {1:["content","转发了"],2:["description","发布了新动态"],4:["content","发布了新动态"]}
         update_type_list ={8:["title","发布了新投稿"],64:["title","发布了新专栏"],256: ["title","发布了新音频"],16: ["title","发布了短视频"]}
         # 遍历每一张cards
-        try:
+        if "cards" in res['data']:
             for cards in res['data']['cards']:
                 #建立一个字典，每次循环会自动清空
                 data = {}
                 # 拿要用的东西
-                data['uid'] = cards['desc']['uid']
+                data['uid'] = cards['desc']['user_profile']['info']['uid']
                 data['uname'] = cards['desc']['user_profile']['info']['uname']
+                data['face'] = cards['desc']['user_profile']['info']['face']
                 data['dynamic_id'] = cards['desc']['dynamic_id']
                 data['rid'] = cards['desc']['rid']
                 data['type'] = cards['desc']['type']
                 cardstype = cards['desc']['type']
                 data['timestamp'] = cards['desc']['timestamp']
+                if "topic_info" in cards['display']:
+                    topic = []
+                    for topic_info in cards['display']['topic_info']['topic_details']:
+                        topic.append(topic_info['topic_name'])
+                    data['topic'] = topic
+
+                if "emoji_info" in cards['display']:
+                    emoji = []
+                    for emoji_info in cards['display']['emoji_info']['emoji_details']:
+                        emoji_details = {}
+                        emoji_details['text'] = emoji_info['text']
+                        emoji_details['4'] = emoji_info['url']
+                        emoji.append(emoji_details)
+                    data['emoji'] = emoji
+
                 # data['cards'] = cards['card']
                 # 看类型下菜 转发 动态 图片动态
                 if cardstype == 1 or cardstype == 2 or cardstype == 4:
@@ -136,8 +154,9 @@ class BiliApi():
                 pass
             dynamic_list['count'] = len(inofmation)
             dynamic_list['data'] = inofmation
+            print(dynamic_list)
             return dynamic_list
-        except:
+        else:
             dynamic_list = {}
             try:
                 dynamic_list['max_dynamic_id']  = res['data']['max_dynamic_id']
@@ -335,6 +354,27 @@ class BiliApi():
             res['data']['code'] = res['code']
             data = await self.dynamic_json_translate(res)
             return data
+
+    async def get_follow_list(self,pn,order_type = ''):
+        cookie = self.cookie
+        uid = cookie['DedeUserID']
+        params = {'vmid':uid,'pn':pn,'ps':50,'order':'desc','order_type':order_type,'jsonp':'jsonp'}
+        res = await self.get(self.url[7], params = params, cookies = cookie, headers = self.default_headers)
+        if res['code'] != 0:
+            return {"code":res['code'], "message":res['message']}
+        else:
+            if len(res['data']['list']) != 0:
+                followingslist = []
+                Name = {}
+                for followings in res['data']['list'] :
+                    son = []
+                    uid = followings['mid']
+                    uname = followings['uname']
+                    followingslist.append(str(uid))
+                    Name[str(uid)] = uname
+                return {'count':res['data']['total'],'data':followingslist,'name':Name}
+            else:
+                return None
 
 
 
